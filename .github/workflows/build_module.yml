@@ -212,7 +212,7 @@ jobs:
           done
 
           cd ..
-          zip -r zapret-Magisk.zip ./module/*
+          cd module && zip -r ../zapret-Magisk.zip ./*
 
       - name: Calculate SHA-256 checksum
         id: sha256
