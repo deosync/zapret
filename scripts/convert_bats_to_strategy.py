@@ -42,13 +42,13 @@ def cleanup_command(command: str) -> str:
 def normalize_paths(line: str) -> str:
     """Приводит пути к unix-стилю и заменяет переменные"""
     # Замена путей для fake-файлов (исправлена ошибка с обрезанием .bin)
-    line = re.sub(r'%BIN%\\?([^%"]+\.bin)', r'$MODPATH/fake/\1', line, flags=re.IGNORECASE)
+    line = re.sub(r'%BIN%\\?([^%"]+\.bin)', r'$MODPATH/fake/\g<1>', line, flags=re.IGNORECASE)
     
     # Замена путей для list-файлов
-    line = re.sub(r'%LISTS%\\?list-([^"]+\.txt)', r'$MODPATH/list/list-\1', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\?list-([^"]+\.txt)', r'$MODPATH/list/list-\g<1>', line, flags=re.IGNORECASE)
     
     # Замена путей для ipset-файлов
-    line = re.sub(r'%LISTS%\\?ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\1', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\?ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\g<1>', line, flags=re.IGNORECASE)
     
     # Удаляем кавычки и нормализуем слеши
     line = line.replace('"', '').replace('\\', '/').replace('//', '/')
@@ -56,7 +56,7 @@ def normalize_paths(line: str) -> str:
     # Удаляем %GameFilter% и исправляем запятые
     line = line.replace('%GameFilter%', '')
     line = re.sub(r',,+', ',', line)
-    line = re.sub(r'(=),', r'\1', line)
+    line = re.sub(r'(=),', r'\g<1>', line)
     line = re.sub(r',\s*--', ' --', line)
     line = re.sub(r',\s*$', '', line)
     
@@ -69,7 +69,7 @@ def normalize_rule(rule: str, index: int, total_rules: int) -> str:
     # Исправляем пустые фильтры TCP/UDP
     rule = re.sub(
         r'(--filter-(?:tcp|udp)=),', 
-        r'\180,443,', 
+        r'\g<1>80,443,', 
         rule
     )
     
