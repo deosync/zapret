@@ -41,14 +41,14 @@ def cleanup_command(command: str) -> str:
 
 def normalize_paths(line: str) -> str:
     """Приводит пути к unix-стилю и заменяет переменные"""
-    # Замена путей для fake-файлов
-    line = re.sub(r'%BIN%\\?([^%"]+\.bin)', r'$MODPATH/fake/\g<1>', line, flags=re.IGNORECASE)
+    # Замена путей для fake-файлов (исправлена ошибка с обрезанием .bin)
+    line = re.sub(r'%BIN%\\?([^%"]+\.bin)', r'$MODPATH/fake/\1', line, flags=re.IGNORECASE)
     
     # Замена путей для list-файлов
-    line = re.sub(r'%LISTS%\\?list-([^"]+\.txt)', r'$MODPATH/list/list-\g<1>', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\?list-([^"]+\.txt)', r'$MODPATH/list/list-\1', line, flags=re.IGNORECASE)
     
     # Замена путей для ipset-файлов
-    line = re.sub(r'%LISTS%\\?ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\g<1>', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\?ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\1', line, flags=re.IGNORECASE)
     
     # Удаляем кавычки и нормализуем слеши
     line = line.replace('"', '').replace('\\', '/').replace('//', '/')
@@ -56,7 +56,6 @@ def normalize_paths(line: str) -> str:
     # Удаляем %GameFilter% и исправляем запятые
     line = line.replace('%GameFilter%', '')
     line = re.sub(r',,+', ',', line)
-    # Удаляем запятые в конце значений параметров
     line = re.sub(r'(=),', r'\1', line)
     line = re.sub(r',\s*--', ' --', line)
     line = re.sub(r',\s*$', '', line)
@@ -70,7 +69,7 @@ def normalize_rule(rule: str, index: int, total_rules: int) -> str:
     # Исправляем пустые фильтры TCP/UDP
     rule = re.sub(
         r'(--filter-(?:tcp|udp)=),', 
-        r'\g<1>80,443,', 
+        r'\180,443,', 
         rule
     )
     
@@ -90,13 +89,8 @@ def normalize_rule(rule: str, index: int, total_rules: int) -> str:
             rule
         )
     
-    # Убираем --new из конца правил, кроме случая когда это не последнее правило
-    if index < total_rules:
-        rule = rule.rstrip('--new').strip()
-    
-    # Для последнего правила удаляем --new совсем
-    if index == total_rules:
-        rule = rule.replace('--new', '').strip()
+    # Убираем --new из конца правил
+    rule = rule.replace('--new', '').strip()
     
     return re.sub(r'\s+', ' ', rule).strip()
 
@@ -140,14 +134,16 @@ def write_sh_file(bat_file: Path, out_file: Path):
             f.write(f'# Rule {i}: {comment}\n')
             
             if i == 1:
-                # Для первого правила добавляем --new только если это не последнее правило
-                suffix = " --new" if total_rules > 1 else ""
-                f.write(f'config="{normalized}{suffix}"\n\n')
+                # Для первого правила
+                if total_rules > 1:
+                    f.write(f'config="{normalized} --new"\n\n')
+                else:
+                    f.write(f'config="{normalized}"\n\n')
             elif i < total_rules:
                 f.write(f'config="$config {normalized} --new"\n\n')
             else:
                 # Для последнего правила не добавляем --new
-                f.write(f'config="$config {normalized}"\n\n')
+                f.write(f'config="$config {normalized}"\n')
 
     out_file.chmod(0o755)
 
