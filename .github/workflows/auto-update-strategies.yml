@@ -53,7 +53,7 @@ jobs:
             echo "has_updates=true" >> "$GITHUB_OUTPUT"
             echo "Upstream changed: $UPSTREAM_COMMIT"
           else
-            echo "has_updates=true" >> "$GITHUB_OUTPUT"
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
             echo "No changes in upstream"
           fi
 
@@ -106,32 +106,42 @@ jobs:
         run: |
           set -e
           # Получаем последний тег
-          LAST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          LAST_TAG=$(git tag --sort=-v:refname | head -n 1 || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag found. Using 1.0 as base."
+            LAST_TAG="1.0"
+          fi
           echo "Last tag: $LAST_TAG"
+
+          # Проверяем формат тега (ожидаем X.Y где X и Y - целые числа)
+          if [[ ! "$LAST_TAG" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Tag format not supported (expected X.Y, got: $LAST_TAG)"
+            exit 1
+          fi
 
           # Разделяем major.minor
           MAJOR=$(echo "$LAST_TAG" | cut -d. -f1)
           MINOR=$(echo "$LAST_TAG" | cut -d. -f2)
 
-          # Увеличиваем минор на 0.1
-          NEW_MINOR=$(awk "BEGIN {printf \"%.1f\", $MINOR + 0.1}")
+          # Увеличиваем минор как целое число
+          NEW_MINOR=$((MINOR + 1))
           NEW_TAG="$MAJOR.$NEW_MINOR"
           echo "New tag: $NEW_TAG"
 
-          # Создаём release: tag = новый, name = старый
+          # Создаём release
           curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
             -d "{
                   \"tag_name\": \"$NEW_TAG\",
-                  \"name\": \"$LAST_TAG\",
-                  \"body\": \"Auto-generated release after strategy update\",
+                  \"name\": \"$NEW_TAG\",
+                  \"body\": \"Auto-generated release after strategy update from upstream commit ${{ steps.check.outputs.upstream_commit }}\",
                   \"draft\": false,
                   \"prerelease\": false
                 }"
 
-          echo "✅ Release created: $NEW_TAG with name $LAST_TAG"
+          echo "✅ Release created: $NEW_TAG"
 
       - name: Add summary to job
         if: steps.check.outputs.has_updates == 'true'
