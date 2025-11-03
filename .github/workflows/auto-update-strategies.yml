@@ -15,6 +15,7 @@ concurrency:
 jobs:
   update-strategies:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository (full)
         uses: actions/checkout@v4
@@ -69,7 +70,7 @@ import os
 from pathlib import Path
 
 def clean_and_join_lines(text):
-    out=[]
+    out = []
     for l in text.splitlines():
         s = l.strip()
         if not s:
