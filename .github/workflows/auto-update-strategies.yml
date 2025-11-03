@@ -64,7 +64,8 @@ jobs:
 
           cat > convert_bats_to_strategy.py <<'PY'
 #!/usr/bin/env python3
-import re, os
+import re
+import os
 from pathlib import Path
 
 def clean_and_join_lines(text):
