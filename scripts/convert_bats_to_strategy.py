@@ -34,23 +34,30 @@ def main():
             lines = [l for l in lines if l]
             full = ' '.join(lines)
 
+            # Разделяем по --new
             parts = [p.strip() for p in full.split('--new') if p.strip()]
 
             out_file = out_dir / f'flowseal-alt{idx}.sh'
             with out_file.open('w', encoding='utf-8') as f:
                 f.write(f'#!/bin/bash\n')
-                f.write(f'# Zapret Configuration - {bat.name}\n')
+                f.write(f'# Zapret Configuration - {bat.stem}\n')
                 f.write(f'# Converted from Windows winws.exe config\n\n')
 
                 for i, p in enumerate(parts, start=1):
                     rule = normalize_rule(p)
                     if not rule:
                         continue
+                    comment = f'# Rule {i}'
                     if i == 1:
-                        f.write(f'# Rule {i}\n')
+                        f.write(f'{comment}: UDP 443 для основного списка\n')
                         f.write(f'config="{rule} --new"\n\n')
                     else:
-                        f.write(f'# Rule {i}\n')
+                        # Автоматически добавляем к config
+                        # Исправляем пустые фильтры
+                        rule = rule.replace('--filter-tcp=,', '--filter-tcp=80,443')
+                        if '--filter-udp=' in rule and rule.endswith('='):
+                            rule = rule.replace('--filter-udp=', '--filter-udp=1024-65535')
+                        f.write(f'{comment}: правило {i}\n')
                         f.write(f'config="$config {rule} --new"\n\n')
             out_file.chmod(0o755)
         except Exception as e:
