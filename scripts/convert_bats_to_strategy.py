@@ -14,7 +14,7 @@ def clean_line(line: str) -> str | None:
     # убираем символ переноса линии ^
     return s.rstrip('^').strip()
 
-def normalize_rule(rule: str) -> str:
+def normalize_rule(rule: str, is_first: bool = False) -> str:
     """
     Преобразует отдельное правило в unix-style конфиг
     """
@@ -22,19 +22,21 @@ def normalize_rule(rule: str) -> str:
     if not rule:
         return ''
     
-    # Убираем кавычки вокруг путей
+    # Заменяем пути Windows на unix-style $MODPATH
     rule = re.sub(r'"%?BIN%\\?', '$MODPATH/fake/', rule, flags=re.IGNORECASE)
     rule = re.sub(r'"%?LISTS%\\?', '$MODPATH/list/', rule, flags=re.IGNORECASE)
     
-    # Заменяем \ на /
+    # Меняем \ на /
     rule = rule.replace('\\', '/')
 
     # Убираем winws.exe
     rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule, flags=re.IGNORECASE)
-    # Убираем GameFilter, оставляем чистые фильтры
-    rule = rule.replace('%GameFilter%', '').replace(',,', ',')
 
-    # Убираем лишние кавычки
+    # Убираем GameFilter и лишние запятые
+    rule = rule.replace('%GameFilter%', '')
+    rule = re.sub(r',,+', ',', rule)
+
+    # Убираем все кавычки
     rule = rule.replace('"', '')
 
     # Исправляем пустые фильтры
@@ -42,7 +44,10 @@ def normalize_rule(rule: str) -> str:
         rule = re.sub(r'--filter-tcp=,', '--filter-tcp=80,443', rule)
         rule = re.sub(r'--filter-tcp=$', '--filter-tcp=80,443', rule)
     if '--filter-udp=' in rule:
-        rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
+        if rule.endswith('--dpi-desync-cutoff=n3') or rule.strip().endswith('--dpi-desync-any-protocol=1'):
+            rule = re.sub(r'--filter-udp=', '--filter-udp=1024-65535', rule)
+        else:
+            rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
 
     # Нормализуем пробелы
     rule = re.sub(r'\s+', ' ', rule)
@@ -70,11 +75,11 @@ def main():
                 f.write('# Converted from Windows winws.exe config\n\n')
 
                 for i, part in enumerate(parts, start=1):
-                    rule = normalize_rule(part)
+                    rule = normalize_rule(part, is_first=(i == 1))
                     if not rule:
                         continue
 
-                    # Добавляем осмысленные комментарии
+                    # Комментарии к правилам
                     comment = f'# Rule {i}'
                     if i == 1:
                         comment += ': UDP 443 для основного списка'
@@ -93,6 +98,7 @@ def main():
                     elif i == 8:
                         comment += ': UDP для ipset-all (catch-all, без GameFilter)'
 
+                    # Первая строка без $config, последующие добавляются к $config
                     if i == 1:
                         f.write(f'{comment}\n')
                         f.write(f'config="{rule} --new"\n\n')
