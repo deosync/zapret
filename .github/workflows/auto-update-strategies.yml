@@ -63,6 +63,7 @@ jobs:
           mkdir -p module/strategy
           rm -f module/strategy/flowseal-alt*.sh || true
 
+          # write python converter
           cat > convert_bats_to_strategy.py <<'PY'
 #!/usr/bin/env python3
 import re
