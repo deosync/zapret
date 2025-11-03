@@ -26,7 +26,14 @@ jobs:
         run: |
           git remote add upstream https://github.com/Flowseal/zapret-discord-youtube.git || true
           git fetch upstream --depth=1
-
+          
+      - name: Debug upstream commits
+        run: |
+          echo "HEAD of upstream/main:"
+          git rev-parse upstream/main
+          echo "Saved last commit:"
+          if [ -f .last_upstream_commit ]; then cat .last_upstream_commit; else echo "(none)"; fi
+          
       - name: Get upstream commit & check
         id: check
         shell: bash
