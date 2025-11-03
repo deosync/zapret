@@ -1,6 +1,6 @@
 {
-  "version": "main",
-  "versionCode": "",
-  "zipUrl": "https://github.com/deosync/zapret/releases/download/main/zapret-Magisk.zip",
+  "version": "17.2",
+  "versionCode": "172",
+  "zipUrl": "https://github.com/deosync/zapret/releases/download/17.2/zapret-Magisk.zip",
   "changelog": "https://raw.githubusercontent.com/deosync/zapret/main/CHANGELOG.md"
 }
