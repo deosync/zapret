@@ -8,7 +8,7 @@ on:
       - '[0-9]+*'
   release:
     types: [published]
-      
+
 jobs:          
   build-zapret:
     name: zapret for Android ${{ matrix.abi }}
@@ -31,11 +31,24 @@ jobs:
         with:
           repository: bol-van/zapret
           path: zapret
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Set version variables
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Build
         env:
           ABI: ${{ matrix.abi }}
           TARGET: ${{ matrix.target }}
+          VERSION: ${{ env.VERSION }}
         run: |
           DEPS_DIR=$GITHUB_WORKSPACE/deps
           export TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
@@ -66,7 +79,7 @@ jobs:
             sed -i "s|^prefix=.*|prefix=$DEPS_DIR|g" $DEPS_DIR/lib/pkgconfig/$i.pc
           done
 
-          CFLAGS="-DZAPRET_GH_VER=${{ github.ref_name }} -DZAPRET_GH_HASH=${{ github.sha }} -I$DEPS_DIR/include" \
+          CFLAGS="-DZAPRET_GH_VER=$VERSION -DZAPRET_GH_HASH=${{ github.sha }} -I$DEPS_DIR/include" \
           LDFLAGS="-L$DEPS_DIR/lib" \
           make -C zapret android -j$(nproc)
 
@@ -86,6 +99,7 @@ jobs:
         with:
           repository: DNSCrypt/dnscrypt-proxy
           path: dnscrypt-proxy
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -115,6 +129,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Set version variables
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          VERSION_CODE=$(echo "${VERSION}" | sed 's/[^0-9]//g')
+          echo "version=${VERSION}" >> "$GITHUB_ENV"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}"
+          echo "VERSION_CODE=${VERSION_CODE}"
 
       - name: Download nfqws armeabi-v7a
         uses: actions/download-artifact@v4
@@ -164,21 +195,14 @@ jobs:
 
       - name: Build Magisk Module
         run: |
-          version=${{ github.ref_name }}
-          version_code=$(echo "${version}" | sed 's/[^0-9]//g')
-          echo "version=${version}" >> $GITHUB_ENV
-          echo "versionCode=${version_code}" >> $GITHUB_ENV
-          echo version=${version}
-          echo versionCode=${version_code}
-          
           sudo apt update
-          sudo apt install -y p7zip-full
+          sudo apt install -y zip
           cd module
 
           echo "id=zapret" > module.prop
           echo "name=zapret" >> module.prop
-          echo "version=${version}" >> module.prop
-          echo "versionCode=${version_code}" >> module.prop
+          echo "version=${{ env.version }}" >> module.prop
+          echo "versionCode=${{ env.version_code }}" >> module.prop
           echo "author=sevcator, ImMALWARE, Fenrir-0xFF, bol-van, DNSCrypt, Flowseal" >> module.prop
           echo "description=⚡ Bypass internet-censorship via DPI modification and get extra experience with additional features" >> module.prop
           echo "updateJson=https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/main/update.json" >> module.prop
@@ -188,25 +212,7 @@ jobs:
           done
 
           cd ..
-          7z a zapret-Magisk.zip ./module/*
-
-      - name: Set up Git
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          
-      - name: Push updated files to Main branch
-        run: |
-          echo '{
-            "version": "${{ env.version }}",
-            "versionCode": "${{ env.versionCode }}",
-            "zipUrl": "https://github.com/${{ github.repository }}/releases/download/${{ env.version }}/zapret-Magisk.zip",
-            "changelog": "https://raw.githubusercontent.com/${{ github.repository }}/main/CHANGELOG.md"
-          }' > update.json
-          git add update.json
-          git add module/dnscrypt/blocked-names.txt module/dnscrypt/cloaking-rules.txt
-          git commit -m "Release ${{ env.version }}"
-          git push origin HEAD:main --force || echo "No changes to commit"
+          zip -r zapret-Magisk.zip ./module/*
 
       - name: Calculate SHA-256 checksum
         id: sha256
@@ -220,9 +226,10 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to Release
+        if: github.event_name == 'release' || github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           fail_on_unmatched_files: true
           prerelease: false
@@ -232,28 +239,57 @@ jobs:
           files: |
             zapret-Magisk.zip
 
-      - name: Send to Telegram
+      - name: Set up Git
+        if: github.event_name != 'release'
         run: |
-          curl -X POST \
-            -F document=@"zapret-Magisk.zip" \
-            -F chat_id="${TELEGRAM_CHAT_ID}" \
-            -F caption="$(echo -e "🔔 <b>New release:</b> <a href=\"https://github.com/$GITHUB_REPOSITORY/releases/tag/$VERSION\">$VERSION</a>\n🔑 <b>SHA256:</b> $SHA256")" \
-            -F parse_mode=HTML \
-            -F disable_web_page_preview=true \
-            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument?chat_id=${TELEGRAM_CHAT_ID}"
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -d '{
-              "chat_id": "'"${TELEGRAM_CHAT_ID_MAIN}"'",
-              "text": "🔔 Новый релиз <b>'"${VERSION}"'</b> модуля zapret-magisk вышел! <a href=\"'"${RELEASES_TELEGRAM_CHANNEL}"'\">Подробнее...</a>",
-              "parse_mode": "HTML",
-              "disable_web_page_preview": true
-            }' \
-            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID_MAIN}"
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git config --global url."https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Push updated files to Main branch
+        if: github.event_name != 'release'
+        run: |
+          echo '{
+            "version": "${{ env.version }}",
+            "versionCode": "${{ env.version_code }}",
+            "zipUrl": "https://github.com/${{ github.repository }}/releases/download/${{ env.version }}/zapret-Magisk.zip",
+            "changelog": "https://raw.githubusercontent.com/${{ github.repository }}/main/CHANGELOG.md"
+          }' > update.json
+          git add update.json
+          git add module/dnscrypt/blocked-names.txt module/dnscrypt/cloaking-rules.txt || true
+          git commit -m "Release ${{ env.version }} [skip ci]" || echo "No changes to commit"
+          git push origin HEAD:main --force || echo "No changes to push"
+
+      - name: Send to Telegram
+        if: success() && (github.event_name == 'release' || github.event_name == 'push')
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ env.version }}
           SHA256: ${{ env.SHA256 }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CHAT_ID_MAIN: ${{ secrets.TELEGRAM_CHAT_ID_MAIN }}
           RELEASES_TELEGRAM_CHANNEL: ${{ secrets.RELEASES_TELEGRAM_CHANNEL }}
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            RELEASE_URL="${{ github.event.release.html_url }}"
+          else
+            RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${{ env.version }}"
+          fi
+          
+          curl -X POST \
+            -F document=@"zapret-Magisk.zip" \
+            -F chat_id="${TELEGRAM_CHAT_ID}" \
+            -F caption="$(echo -e "🔔 <b>New release:</b> <a href=\"${RELEASE_URL}\">${{ env.version }}</a>\n🔑 <b>SHA256:</b> ${SHA256}")" \
+            -F parse_mode=HTML \
+            -F disable_web_page_preview=true \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument"
+          
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d '{
+              "chat_id": "'"${TELEGRAM_CHAT_ID_MAIN}"'",
+              "text": "🔔 Новый релиз <b>'"${{ env.version }}"'</b> модуля zapret-magisk вышел! <a href=\"'"${RELEASES_TELEGRAM_CHANNEL}"'\">Подробнее...</a>",
+              "parse_mode": "HTML",
+              "disable_web_page_preview": true
+            }' \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
