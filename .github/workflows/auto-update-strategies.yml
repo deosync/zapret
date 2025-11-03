@@ -45,6 +45,7 @@ jobs:
             echo "has_updates=false" >> $GITHUB_OUTPUT
             echo "ℹ️ No changes in upstream"
 
+
       - name: Download upstream .bat files
         if: steps.check.outputs.has_updates == 'true'
         run: |
