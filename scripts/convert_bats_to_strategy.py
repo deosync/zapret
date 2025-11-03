@@ -29,12 +29,13 @@ def normalize_rule(rule: str) -> str:
     # Заменяем \ на /
     rule = rule.replace('\\', '/')
 
-    # Убираем winws.exe и GameFilter
+    # Убираем winws.exe
     rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule, flags=re.IGNORECASE)
-    rule = rule.replace('%GameFilter%', '')
+    # Убираем GameFilter, оставляем чистые фильтры
+    rule = rule.replace('%GameFilter%', '').replace(',,', ',')
 
-    # Нормализуем двойные пробелы
-    rule = re.sub(r'\s+', ' ', rule)
+    # Убираем лишние кавычки
+    rule = rule.replace('"', '')
 
     # Исправляем пустые фильтры
     if '--filter-tcp=' in rule:
@@ -42,6 +43,9 @@ def normalize_rule(rule: str) -> str:
         rule = re.sub(r'--filter-tcp=$', '--filter-tcp=80,443', rule)
     if '--filter-udp=' in rule:
         rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
+
+    # Нормализуем пробелы
+    rule = re.sub(r'\s+', ' ', rule)
 
     return rule.strip()
 
