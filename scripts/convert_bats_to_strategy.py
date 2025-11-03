@@ -10,27 +10,40 @@ def clean_line(line):
     return s.rstrip('^').strip()
 
 def normalize_rule(rule):
-    rule = re.sub(r'\s+', ' ', rule)
-    rule = re.sub(r'--([a-z\-]+)\s+', r'--\1=', rule)
-    rule = rule.replace('"', '')
-
-    # Правильные подстановки для путей
+    # Убираем все вызовы winws.exe и echo
+    rule = re.sub(r'^(echo:)?\s*', '', rule)
+    rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule)
+    rule = re.sub(r'start\s+"[^"]*"\s*/min\s*', '', rule)
+    
+    # Заменяем переменные путей
     rule = rule.replace('%BIN%', '$MODPATH/fake/')
     rule = rule.replace('%LISTS%', '$MODPATH/list/')
-    
-    # ipset файлы отдельно
-    rule = re.sub(r'\$MODPATH/list/ipset-(\S+\.txt)', r'$MODPATH/ipset/ipset-\1', rule)
-    
-    # Удаляем пустые фильтры
-    rule = re.sub(r'--filter-(tcp|udp)=,', r'--filter-\1=80,443', rule)
-    rule = re.sub(r'--filter-(tcp|udp)=$', r'--filter-\1=1024-65535', rule)
-    
-    # Убираем winws.exe и wf-* параметры
-    rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule)
-    rule = re.sub(r'--wf-tcp[=\s]+[0-9,\-]*\s*', '', rule)
-    rule = re.sub(r'--wf-udp[=\s]+[0-9,\-]*\s*', '', rule)
 
+    # ipset файлы
+    rule = re.sub(r'\$MODPATH/list/ipset-(\S+\.txt)', r'$MODPATH/ipset/ipset-\1', rule)
+
+    # Преобразуем пустые фильтры
+    rule = re.sub(r'--filter-(tcp|udp)=,', r'--filter-\1=80,443', rule)
+    rule = re.sub(r'--filter-(tcp|udp)=$', lambda m: '--filter-udp=1024-65535' if m.group(1) == 'udp' else '--filter-tcp=80,443', rule)
+
+    # Убираем wf-* параметры
+    rule = re.sub(r'--wf-tcp[=\s]+[0-9,\-]*\s*', '', rule)
+    rule = re.sub(r'--wf-udp[=\s]+[0-9,\-]*[0-9,\-]*\s*', '', rule)
+
+    # Убираем GameFilter, если он остался
+    rule = rule.replace('%GameFilter%', '')
+
+    # Убираем лишние пробелы
+    rule = re.sub(r'\s+', ' ', rule)
     return rule.strip()
+
+def generate_rule_comment(rule, idx):
+    # Простейшая генерация читаемого комментария
+    if '--filter-udp=' in rule:
+        return f'# Rule {idx}: UDP {re.search(r"--filter-udp=([0-9,\-]+)", rule).group(1) if re.search(r"--filter-udp=([0-9,\-]+)", rule) else ""}'
+    if '--filter-tcp=' in rule:
+        return f'# Rule {idx}: TCP {re.search(r"--filter-tcp=([0-9,\-]+)", rule).group(1) if re.search(r"--filter-tcp=([0-9,\-]+)", rule) else ""}'
+    return f'# Rule {idx}'
 
 def main():
     src = Path('upstream_bats')
@@ -49,19 +62,20 @@ def main():
 
             out_file = out_dir / f'flowseal-alt{idx}.sh'
             with out_file.open('w', encoding='utf-8') as f:
-                f.write(f'#!/bin/bash\n')
+                f.write('#!/bin/bash\n')
                 f.write(f'# Zapret Configuration - {bat.stem}\n')
-                f.write(f'# Converted from Windows winws.exe config\n\n')
+                f.write('# Converted from Windows winws.exe config\n\n')
 
                 for i, p in enumerate(parts, start=1):
                     rule = normalize_rule(p)
                     if not rule:
                         continue
+                    comment = generate_rule_comment(rule, i)
                     if i == 1:
-                        f.write(f'# Rule {i}: UDP 443 для основного списка\n')
+                        f.write(f'{comment} для основного списка\n')
                         f.write(f'config="{rule} --new"\n\n')
                     else:
-                        f.write(f'# Rule {i}\n')
+                        f.write(f'{comment}\n')
                         f.write(f'config="$config {rule} --new"\n\n')
             out_file.chmod(0o755)
         except Exception as e:
