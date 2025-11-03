@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 
 def clean_line(line: str) -> str | None:
-    """Удаляет ненужные строки и символы Windows batch"""
     s = line.strip()
     if not s or s.startswith('::') or s.startswith('@echo') or s.startswith('chcp') \
        or s.startswith('cd ') or s.startswith('call ') or s.startswith('set ') \
@@ -12,19 +11,18 @@ def clean_line(line: str) -> str | None:
     return s.rstrip('^').strip()
 
 def normalize_paths(line: str) -> str:
-    """Заменяет Windows переменные на unix пути"""
-    line = re.sub(r'%BIN%', '$MODPATH/fake', line, flags=re.IGNORECASE)
-    line = re.sub(r'%LISTS%\\?list-', '$MODPATH/list/', line, flags=re.IGNORECASE)
-    line = re.sub(r'%LISTS%\\?ipset-', '$MODPATH/ipset/', line, flags=re.IGNORECASE)
+    # Приведение путей к unix-style
+    line = line.replace('%BIN%', '$MODPATH/fake/')
+    line = line.replace('%LISTS%\\list-', '$MODPATH/list/list-')
+    line = line.replace('%LISTS%\\ipset-', '$MODPATH/ipset/ipset-')
     line = line.replace('\\', '/')
     line = line.replace('"', '')
+    line = line.replace('%GameFilter%', '')
+    line = re.sub(r',,+', ',', line)
     return line
 
 def normalize_rule(rule: str, index: int) -> str:
-    """Приводит отдельное правило к unix-конфигу"""
     rule = normalize_paths(rule)
-    rule = rule.replace('%GameFilter%', '')
-    rule = re.sub(r',,+', ',', rule)  # удаляем двойные запятые
 
     # Исправляем пустые фильтры
     if '--filter-tcp=' in rule:
@@ -33,28 +31,23 @@ def normalize_rule(rule: str, index: int) -> str:
     if '--filter-udp=' in rule and index == 8:
         rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
 
-    # Убираем лишние запятые
     rule = re.sub(r'--filter-tcp=80,443,', '--filter-tcp=80,443', rule)
-
     rule = re.sub(r'\s+', ' ', rule)
     return rule.strip()
 
 def parse_bat_file(bat_file: Path) -> list[str]:
-    """Парсит .bat файл и возвращает список правил"""
     lines = [clean_line(line) for line in bat_file.read_text(encoding='utf-8', errors='ignore').splitlines()]
     lines = [line for line in lines if line]
-
     full_text = ' '.join(lines)
     parts = [p.strip() for p in full_text.split('--new') if p.strip()]
     return parts
 
 def write_sh_file(bat_file: Path, out_file: Path):
-    """Генерирует unix-конфиг из .bat файла"""
     parts = parse_bat_file(bat_file)
 
     with out_file.open('w', encoding='utf-8') as f:
         f.write('#!/bin/bash\n')
-        f.write(f'# Zapret Configuration - {bat_file.stem} (ALT)\n')
+        f.write(f'# Zapret Configuration - {bat_file.stem}\n')
         f.write('# Converted from Windows winws.exe config\n\n')
 
         for i, part in enumerate(parts, start=1):
@@ -62,8 +55,6 @@ def write_sh_file(bat_file: Path, out_file: Path):
             if not rule:
                 continue
 
-            # Комментарии
-            comment = f'# Rule {i}'
             comments_map = {
                 1: 'UDP 443 для основного списка',
                 2: 'UDP 19294-19344,50000-50100 для Discord/STUN',
@@ -74,9 +65,8 @@ def write_sh_file(bat_file: Path, out_file: Path):
                 7: 'TCP 80,443 для ipset-all',
                 8: 'UDP для ipset-all (catch-all, без GameFilter)',
             }
-            if i in comments_map:
-                comment += f': {comments_map[i]}'
-
+            comment = f'# Rule {i}: {comments_map.get(i,"")}'
+            
             if i == 1:
                 f.write(f'{comment}\n')
                 f.write(f'config="{rule} --new"\n\n')
