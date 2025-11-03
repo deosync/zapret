@@ -1,12 +1,10 @@
 name: Auto Update Flowseal Strategies
 
-# Запускается по расписанию и вручную
 on:
   schedule:
-    - cron: '0 */6 * * *'   # каждые 6 часов
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
-# Нужны права записи в репо для commit/push
 permissions:
   contents: write
 
@@ -33,14 +31,12 @@ jobs:
         run: |
           UPSTREAM_COMMIT=$(git rev-parse upstream/main)
           echo "upstream_commit=$UPSTREAM_COMMIT" >> $GITHUB_OUTPUT
-
           if [ -f .last_upstream_commit ]; then
             LAST_COMMIT=$(cat .last_upstream_commit)
           else
             LAST_COMMIT=""
           fi
           echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
-
           if [ "$UPSTREAM_COMMIT" != "$LAST_COMMIT" ]; then
             echo "has_updates=true" >> $GITHUB_OUTPUT
             echo "✅ Upstream changed: $UPSTREAM_COMMIT"
@@ -64,7 +60,6 @@ jobs:
         run: |
           set -e
           mkdir -p module/strategy
-          # remove previously generated flowseal-alt files (we will regenerate)
           rm -f module/strategy/flowseal-alt*.sh || true
 
           cat > convert_bats_to_strategy.py <<'PY'
@@ -103,7 +98,6 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     seq = 1
     total = 0
-    # deterministic order
     for bat in sorted(src.glob('*.bat')):
         try:
             text = bat.read_text(encoding='utf-8', errors='ignore')
@@ -147,23 +141,14 @@ PY
           set -e
           git config user.name "github-actions[auto-convert]"
           git config user.email "actions@github.com"
-
-          # write upstream commit to file
           echo "${{ steps.check.outputs.upstream_commit }}" > .last_upstream_commit
-
           git add module/strategy/ .last_upstream_commit || true
-
-          # if no changes staged -> exit
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-
           COMMIT_MSG="Auto-convert: Update strategies from upstream ${{ steps.check.outputs.upstream_commit }} [auto-convert]"
           git commit -m "$COMMIT_MSG"
-
-          # push using default checkout auth (GITHUB_TOKEN) - push itself is fine;
-          # later we will explicitly trigger build workflow via PAT.
           git push origin HEAD:main --follow-tags
 
       - name: Trigger build/release workflow (build_module.yml) via workflow_dispatch
@@ -171,25 +156,19 @@ PY
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          # If PAT_TOKEN not configured, skip triggering dispatch and log info.
           if [ -z "${PAT_TOKEN:-}" ]; then
-            echo "PAT_TOKEN not provided — skipping workflow_dispatch trigger. If you want automated release pipeline, set secrets.PAT_TOKEN in repository secrets."
+            echo "PAT_TOKEN not provided — skipping workflow_dispatch trigger."
             exit 0
           fi
-
-          # Adjust workflow file name if your workflow file name differs.
           WORKFLOW_ID="build_module.yml"
           REPO="${{ github.repository }}"
           REF="main"
-
           echo "Triggering workflow_dispatch for ${WORKFLOW_ID} on ${REPO} (ref=${REF})"
           RESPONSE=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST \
             -H "Authorization: Bearer ${PAT_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_ID}/dispatches \
             -d "{\"ref\":\"${REF}\"}")
-
-          # curl prints http status to stderr due to -o; we check exit code via status
           if [ "$RESPONSE" -eq 204 ] || [ "$RESPONSE" -eq 201 ] || [ "$RESPONSE" -eq 202 ]; then
             echo "✅ workflow_dispatch triggered (HTTP $RESPONSE)"
           else
