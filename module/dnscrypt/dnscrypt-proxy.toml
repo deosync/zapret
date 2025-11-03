@@ -1,0 +1,61 @@
+########################################################
+#         For github.com/sevcator/zapret-magisk        #
+########################################################
+
+listen_addresses = ['127.0.0.2:53']
+
+server_names = ['controld-unfiltered', 'nextdns', 'nextdns-ultralow']
+
+max_clients = 250
+ipv4_servers = true
+ipv6_servers = false
+dnscrypt_servers = true
+doh_servers = true
+odoh_servers = true
+require_dnssec = true
+require_nolog = true
+require_nofilter = true
+disabled_server_names = []
+
+force_tcp = false
+http3 = true
+timeout = 2500
+keepalive = 30
+
+blocked_query_response = 'refused'
+use_syslog = false
+
+cert_refresh_delay = 240
+bootstrap_resolvers = ['1.1.1.1:53', '1.0.0.1:53', '76.76.2.0:53','76.76.10.0:53', '45.90.28.0:53', '45.90.30.0:53']
+ignore_system_dns = true
+netprobe_timeout = 10
+netprobe_address = '45.90.28.0:53'
+
+block_ipv6 = false
+block_unqualified = true
+block_undelegated = true
+reject_ttl = 10
+
+cache = false
+
+cloaking_rules = 'cloaking-rules.txt'
+
+[blocked_names]
+blocked_names_file = 'blocked-names.txt'
+
+[blocked_ips]
+blocked_ips_file = 'blocked-ips.txt'
+
+[broken_implementations]
+fragments_blocked = ['cisco', 'cisco-ipv6', 'cisco-familyshield', 'cisco-familyshield-ipv6', 'cisco-sandbox', 'cleanbrowsing-adult', 'cleanbrowsing-adult-ipv6', 'cleanbrowsing-family', 'cleanbrowsing-family-ipv6', 'cleanbrowsing-security', 'cleanbrowsing-security-ipv6']
+
+[anonymized_dns]
+skip_incompatible = false
+
+[static]
+[static.'controld-unfiltered']
+stamp = 'sdns://AgcAAAAAAAAACjc2Ljc2LjIuMTEAFGZyZWVkbnMuY29udHJvbGQuY29tAy9wMA'
+[static.'nextdns']
+stamp = 'sdns://AgcAAAAAAAAACjQ1LjkwLjMwLjAgmjo09yfeubylEAPZzpw5-PJ92cUkKQHCurGkTmNaAhkWYW55Y2FzdC5kbnMubmV4dGRucy5pbwovZG5zLXF1ZXJ5'
+[static.'nextdns-ultralow']
+stamp = 'sdns://AgcAAAAAAAAACjQ1LjkwLjMwLjAgmjo09yfeubylEAPZzpw5-PJ92cUkKQHCurGkTmNaAhkWYW55Y2FzdC5kbnMubmV4dGRucy5pbwovZG5zLXF1ZXJ5'

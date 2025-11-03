@@ -1,0 +1,14 @@
+#!/sbin/sh
+
+umask 022
+
+# echo before loading util_functions
+ui_print() { echo "$1"; }
+
+OUTFD=$2
+ZIPFILE=$3
+
+. /data/adb/magisk/util_functions.sh
+
+install_module
+exit 0
