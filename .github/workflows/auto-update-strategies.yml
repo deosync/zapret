@@ -29,21 +29,30 @@ jobs:
 
       - name: Get upstream commit & check
         id: check
+        shell: bash
         run: |
-          UPSTREAM_COMMIT=$(git rev-parse upstream/main)
-          echo "upstream_commit=$UPSTREAM_COMMIT" >> $GITHUB_OUTPUT
+          set -e
+          # Получаем хеш последнего коммита upstream
+          UPSTREAM_COMMIT="$(git rev-parse upstream/main)"
+          echo "upstream_commit=$UPSTREAM_COMMIT" >> "$GITHUB_OUTPUT"
+
+          # Читаем предыдущий коммит
           if [ -f .last_upstream_commit ]; then
-            LAST_COMMIT=$(cat .last_upstream_commit)
+            LAST_COMMIT="$(cat .last_upstream_commit)"
           else
             LAST_COMMIT=""
           fi
-          echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
+          echo "last_commit=$LAST_COMMIT" >> "$GITHUB_OUTPUT"
+
+          # Проверяем, есть ли обновления
           if [ "$UPSTREAM_COMMIT" != "$LAST_COMMIT" ]; then
-            echo "has_updates=true" >> $GITHUB_OUTPUT
-            echo "✅ Upstream changed: $UPSTREAM_COMMIT"
+            echo "has_updates=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream changed: $UPSTREAM_COMMIT"
           else
-            echo "has_updates=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ No changes in upstream"
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            echo "No changes in upstream"
+          fi
+
 
 
       - name: Download upstream .bat files
