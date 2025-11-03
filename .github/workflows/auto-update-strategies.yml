@@ -53,7 +53,7 @@ jobs:
             echo "has_updates=true" >> "$GITHUB_OUTPUT"
             echo "Upstream changed: $UPSTREAM_COMMIT"
           else
-            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            echo "has_updates=true" >> "$GITHUB_OUTPUT"
             echo "No changes in upstream"
           fi
 
