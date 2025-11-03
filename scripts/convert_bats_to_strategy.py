@@ -3,56 +3,88 @@ import re
 from pathlib import Path
 
 def clean_line(line: str) -> str | None:
-    """
-    Убирает ненужные строки и символы Windows batch
-    """
+    """Удаляет ненужные строки и символы Windows batch"""
     s = line.strip()
     if not s or s.startswith('::') or s.startswith('@echo') or s.startswith('chcp') \
        or s.startswith('cd ') or s.startswith('call ') or s.startswith('set ') \
        or s.startswith('start '):
         return None
-    # убираем символ переноса линии ^
     return s.rstrip('^').strip()
 
-def normalize_rule(rule: str, is_first: bool = False) -> str:
-    """
-    Преобразует отдельное правило в unix-style конфиг
-    """
-    rule = rule.strip()
-    if not rule:
-        return ''
-    
-    # Заменяем пути Windows на unix-style $MODPATH
-    rule = re.sub(r'"%?BIN%\\?', '$MODPATH/fake/', rule, flags=re.IGNORECASE)
-    rule = re.sub(r'"%?LISTS%\\?', '$MODPATH/list/', rule, flags=re.IGNORECASE)
-    
-    # Меняем \ на /
-    rule = rule.replace('\\', '/')
+def normalize_paths(line: str) -> str:
+    """Заменяет Windows переменные на unix пути"""
+    line = re.sub(r'%BIN%', '$MODPATH/fake', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\?list-', '$MODPATH/list/', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\?ipset-', '$MODPATH/ipset/', line, flags=re.IGNORECASE)
+    line = line.replace('\\', '/')
+    line = line.replace('"', '')
+    return line
 
-    # Убираем winws.exe
-    rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule, flags=re.IGNORECASE)
-
-    # Убираем GameFilter и лишние запятые
+def normalize_rule(rule: str, index: int) -> str:
+    """Приводит отдельное правило к unix-конфигу"""
+    rule = normalize_paths(rule)
     rule = rule.replace('%GameFilter%', '')
-    rule = re.sub(r',,+', ',', rule)
-
-    # Убираем все кавычки
-    rule = rule.replace('"', '')
+    rule = re.sub(r',,+', ',', rule)  # удаляем двойные запятые
 
     # Исправляем пустые фильтры
     if '--filter-tcp=' in rule:
         rule = re.sub(r'--filter-tcp=,', '--filter-tcp=80,443', rule)
         rule = re.sub(r'--filter-tcp=$', '--filter-tcp=80,443', rule)
-    if '--filter-udp=' in rule:
-        if rule.endswith('--dpi-desync-cutoff=n3') or rule.strip().endswith('--dpi-desync-any-protocol=1'):
-            rule = re.sub(r'--filter-udp=', '--filter-udp=1024-65535', rule)
-        else:
-            rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
+    if '--filter-udp=' in rule and index == 8:
+        rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
 
-    # Нормализуем пробелы
+    # Убираем лишние запятые
+    rule = re.sub(r'--filter-tcp=80,443,', '--filter-tcp=80,443', rule)
+
     rule = re.sub(r'\s+', ' ', rule)
-
     return rule.strip()
+
+def parse_bat_file(bat_file: Path) -> list[str]:
+    """Парсит .bat файл и возвращает список правил"""
+    lines = [clean_line(line) for line in bat_file.read_text(encoding='utf-8', errors='ignore').splitlines()]
+    lines = [line for line in lines if line]
+
+    full_text = ' '.join(lines)
+    parts = [p.strip() for p in full_text.split('--new') if p.strip()]
+    return parts
+
+def write_sh_file(bat_file: Path, out_file: Path):
+    """Генерирует unix-конфиг из .bat файла"""
+    parts = parse_bat_file(bat_file)
+
+    with out_file.open('w', encoding='utf-8') as f:
+        f.write('#!/bin/bash\n')
+        f.write(f'# Zapret Configuration - {bat_file.stem} (ALT)\n')
+        f.write('# Converted from Windows winws.exe config\n\n')
+
+        for i, part in enumerate(parts, start=1):
+            rule = normalize_rule(part, i)
+            if not rule:
+                continue
+
+            # Комментарии
+            comment = f'# Rule {i}'
+            comments_map = {
+                1: 'UDP 443 для основного списка',
+                2: 'UDP 19294-19344,50000-50100 для Discord/STUN',
+                3: 'TCP 2053,2083,2087,2096,8443 для Discord media',
+                4: 'TCP 443 для Google списка',
+                5: 'TCP 80,443 для основного списка',
+                6: 'UDP 443 для ipset-all',
+                7: 'TCP 80,443 для ipset-all',
+                8: 'UDP для ipset-all (catch-all, без GameFilter)',
+            }
+            if i in comments_map:
+                comment += f': {comments_map[i]}'
+
+            if i == 1:
+                f.write(f'{comment}\n')
+                f.write(f'config="{rule} --new"\n\n')
+            else:
+                f.write(f'{comment}\n')
+                f.write(f'config="$config {rule} --new"\n\n')
+
+    out_file.chmod(0o755)
 
 def main():
     src_dir = Path('upstream_bats')
@@ -60,52 +92,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for idx, bat_file in enumerate(sorted(src_dir.glob('*.bat')), start=1):
+        out_file = out_dir / f'flowseal-alt{idx}.sh'
         try:
-            text = bat_file.read_text(encoding='utf-8', errors='ignore')
-            lines = [clean_line(line) for line in text.splitlines()]
-            lines = [line for line in lines if line]
-
-            full_text = ' '.join(lines)
-            parts = [p.strip() for p in full_text.split('--new') if p.strip()]
-
-            out_file = out_dir / f'flowseal-alt{idx}.sh'
-            with out_file.open('w', encoding='utf-8') as f:
-                f.write('#!/bin/bash\n')
-                f.write(f'# Zapret Configuration - {bat_file.stem} (ALT)\n')
-                f.write('# Converted from Windows winws.exe config\n\n')
-
-                for i, part in enumerate(parts, start=1):
-                    rule = normalize_rule(part, is_first=(i == 1))
-                    if not rule:
-                        continue
-
-                    # Комментарии к правилам
-                    comment = f'# Rule {i}'
-                    if i == 1:
-                        comment += ': UDP 443 для основного списка'
-                    elif i == 2:
-                        comment += ': UDP 19294-19344,50000-50100 для Discord/STUN'
-                    elif i == 3:
-                        comment += ': TCP 2053,2083,2087,2096,8443 для Discord media'
-                    elif i == 4:
-                        comment += ': TCP 443 для Google списка'
-                    elif i == 5:
-                        comment += ': TCP 80,443 для основного списка'
-                    elif i == 6:
-                        comment += ': UDP 443 для ipset-all'
-                    elif i == 7:
-                        comment += ': TCP 80,443 для ipset-all'
-                    elif i == 8:
-                        comment += ': UDP для ipset-all (catch-all, без GameFilter)'
-
-                    # Первая строка без $config, последующие добавляются к $config
-                    if i == 1:
-                        f.write(f'{comment}\n')
-                        f.write(f'config="{rule} --new"\n\n')
-                    else:
-                        f.write(f'{comment}\n')
-                        f.write(f'config="$config {rule} --new"\n\n')
-            out_file.chmod(0o755)
+            write_sh_file(bat_file, out_file)
         except Exception as e:
             print(f"Error processing {bat_file}: {e}")
 
