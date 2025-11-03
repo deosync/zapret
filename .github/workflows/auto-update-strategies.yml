@@ -21,6 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}  # Используем PAT для checkout
 
       - name: Add upstream remote & fetch
         run: |
@@ -98,7 +99,7 @@ jobs:
           git commit -m "$COMMIT_MSG"
           git push origin HEAD:main --follow-tags
 
-      # Этот шаг вычисляет новый тег и сохраняет его в переменную окружения
+      # Этот шаг вычисляет новый тег
       - name: Calculate new release tag
         if: steps.check.outputs.has_updates == 'true'
         id: calculate_tag
@@ -131,17 +132,23 @@ jobs:
           # Сохраняем для следующего шага
           echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
-      # Этот шаг создает релиз с помощью специальной GitHub Action
-      # Это гарантирует генерацию события release, которое триггерит другие workflow
-      - name: Create new release
+      # Создаем тег с помощью PAT, который будет триггерить другие workflow
+      - name: Create and push new tag with PAT
         if: steps.check.outputs.has_updates == 'true'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.calculate_tag.outputs.new_tag }}
-          name: ${{ steps.calculate_tag.outputs.new_tag }}
-          body: "Auto-generated release after strategy update from upstream commit ${{ steps.check.outputs.upstream_commit }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          set -e
+          NEW_TAG="${{ steps.calculate_tag.outputs.new_tag }}"
+          
+          # Настраиваем git для использования PAT
+          git config --global url."https://x-access-token:${PAT_TOKEN}@github.com/".insteadOf "https://github.com/"
+          
+          # Создаем и пушим тег
+          git tag -a "$NEW_TAG" -m "Auto-generated release $NEW_TAG"
+          git push origin "$NEW_TAG"
+          
+          echo "✅ Tag $NEW_TAG created and pushed successfully"
 
       - name: Add summary to job
         if: steps.check.outputs.has_updates == 'true'
@@ -150,7 +157,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Upstream commit:** \`${{ steps.check.outputs.upstream_commit }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**New release tag:** \`${{ steps.calculate_tag.outputs.new_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**New tag created:** \`${{ steps.calculate_tag.outputs.new_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Tag pushed successfully and will trigger the build workflow" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Files:**" >> $GITHUB_STEP_SUMMARY
           ls -1 module/strategy/flowseal-alt*.sh | sed -e 's|module/strategy/||g' | while read f; do echo "- $f" >> $GITHUB_STEP_SUMMARY; done
