@@ -32,11 +32,9 @@ jobs:
         shell: bash
         run: |
           set -e
-          # Получаем хеш последнего коммита upstream
           UPSTREAM_COMMIT="$(git rev-parse upstream/main)"
           echo "upstream_commit=$UPSTREAM_COMMIT" >> "$GITHUB_OUTPUT"
 
-          # Читаем предыдущий коммит
           if [ -f .last_upstream_commit ]; then
             LAST_COMMIT="$(cat .last_upstream_commit)"
           else
@@ -44,7 +42,6 @@ jobs:
           fi
           echo "last_commit=$LAST_COMMIT" >> "$GITHUB_OUTPUT"
 
-          # Проверяем, есть ли обновления
           if [ "$UPSTREAM_COMMIT" != "$LAST_COMMIT" ]; then
             echo "has_updates=true" >> "$GITHUB_OUTPUT"
             echo "Upstream changed: $UPSTREAM_COMMIT"
@@ -52,8 +49,6 @@ jobs:
             echo "has_updates=false" >> "$GITHUB_OUTPUT"
             echo "No changes in upstream"
           fi
-
-
 
       - name: Download upstream .bat files
         if: steps.check.outputs.has_updates == 'true'
@@ -96,29 +91,40 @@ jobs:
           git commit -m "$COMMIT_MSG"
           git push origin HEAD:main --follow-tags
 
-      - name: Trigger build/release workflow
+      - name: Create new release with incremented tag
         if: steps.check.outputs.has_updates == 'true'
         env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          if [ -z "${PAT_TOKEN:-}" ]; then
-            echo "PAT_TOKEN not provided — skipping workflow_dispatch trigger."
-            exit 0
-          fi
-          WORKFLOW_ID="build_module.yml"
-          REPO="${{ github.repository }}"
-          REF="main"
-          RESPONSE=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST \
-            -H "Authorization: Bearer ${PAT_TOKEN}" \
+          set -e
+          # Получаем последний тег
+          LAST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          echo "Last tag: $LAST_TAG"
+
+          # Разделяем major.minor
+          MAJOR=$(echo "$LAST_TAG" | cut -d. -f1)
+          MINOR=$(echo "$LAST_TAG" | cut -d. -f2)
+
+          # Увеличиваем минор на 0.1
+          NEW_MINOR=$(awk "BEGIN {printf \"%.1f\", $MINOR + 0.1}")
+          NEW_TAG="$MAJOR.$NEW_MINOR"
+          echo "New tag: $NEW_TAG"
+
+          # Создаём release: tag = новый, name = старый
+          curl -s -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_ID}/dispatches \
-            -d "{\"ref\":\"${REF}\"}")
-          if [[ "$RESPONSE" =~ ^2 ]]; then
-            echo "✅ workflow_dispatch triggered (HTTP $RESPONSE)"
-          else
-            echo "⚠️ workflow_dispatch may have failed (HTTP $RESPONSE)"
-            exit 1
-          fi
+            https://api.github.com/repos/${GITHUB_REPOSITORY}/releases \
+            -d "{
+                  \"tag_name\": \"$NEW_TAG\",
+                  \"name\": \"$LAST_TAG\",
+                  \"body\": \"Auto-generated release after strategy update\",
+                  \"draft\": false,
+                  \"prerelease\": false
+                }"
+
+          echo "✅ Release created: $NEW_TAG with name $LAST_TAG"
 
       - name: Add summary to job
         if: steps.check.outputs.has_updates == 'true'
