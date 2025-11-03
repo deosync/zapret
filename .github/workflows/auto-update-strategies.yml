@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}  # Используем PAT для checkout
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Add upstream remote & fetch
         run: |
@@ -85,10 +85,16 @@ jobs:
 
       - name: Commit & push changes
         if: steps.check.outputs.has_updates == 'true'
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           set -e
           git config user.name "github-actions[auto-convert]"
           git config user.email "actions@github.com"
+          
+          # Configure git to use PAT token for authentication
+          git config --global url."https://x-access-token:${PAT_TOKEN}@github.com/".insteadOf "https://github.com/"
+          
           echo "${{ steps.check.outputs.upstream_commit }}" > .last_upstream_commit
           git add module/strategy/ .last_upstream_commit || true
           if git diff --cached --quiet; then
@@ -97,9 +103,10 @@ jobs:
           fi
           COMMIT_MSG="Auto-convert: Update strategies from upstream ${{ steps.check.outputs.upstream_commit }} [auto-convert]"
           git commit -m "$COMMIT_MSG"
-          git push origin HEAD:main --follow-tags
+          
+          # Fix URL format and ensure proper authentication
+          git push "https://x-access-token:${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main --follow-tags
 
-      # Этот шаг вычисляет новый тег
       - name: Calculate new release tag
         if: steps.check.outputs.has_updates == 'true'
         id: calculate_tag
@@ -132,8 +139,7 @@ jobs:
           # Сохраняем для следующего шага
           echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
-      # Создаем тег с помощью PAT, который будет триггерить другие workflow
-      - name: Create and push new tag with PAT
+      - name: Create and push new tag
         if: steps.check.outputs.has_updates == 'true'
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -146,7 +152,7 @@ jobs:
           
           # Создаем и пушим тег
           git tag -a "$NEW_TAG" -m "Auto-generated release $NEW_TAG"
-          git push origin "$NEW_TAG"
+          git push "https://x-access-token:${PAT_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$NEW_TAG"
           
           echo "✅ Tag $NEW_TAG created and pushed successfully"
 
