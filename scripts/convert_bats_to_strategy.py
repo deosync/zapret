@@ -26,7 +26,9 @@ def extract_winws_command(content: str) -> str:
             # Извлекаем часть после winws.exe
             parts = line.split('winws.exe', 1)
             if len(parts) > 1:
-                return cleanup_command(parts[1])
+                cleaned = cleanup_command(parts[1])
+                if cleaned:
+                    return cleaned
     
     raise ValueError("Не удалось найти команду winws.exe в файле. Проверьте формат исходного файла.")
 
@@ -39,21 +41,22 @@ def cleanup_command(command: str) -> str:
     command = command.split('echo:', 1)[-1]
     command = re.sub(r'^\s*"', '', command)
     command = re.sub(r'"\s*$', '', command)
+    command = re.sub(r'^\s*:', '', command)  # Удаляем начальные двоеточия
     return command.strip()
 
 def normalize_paths(line: str) -> str:
     """Приводит пути к unix-стилю и заменяет переменные"""
     # Замена путей для fake-файлов
-    line = re.sub(r'%BIN%\\([^%"]+\.bin)', r'$MODPATH/fake/\1', line, flags=re.IGNORECASE)
-    line = re.sub(r'%BIN%([^%"]+\.bin)', r'$MODPATH/fake/\1', line, flags=re.IGNORECASE)
+    line = re.sub(r'%BIN%\\([^%"]+\.bin)', r'$MODPATH/fake/\g<1>', line, flags=re.IGNORECASE)
+    line = re.sub(r'%BIN%([^%"]+\.bin)', r'$MODPATH/fake/\g<1>', line, flags=re.IGNORECASE)
     
     # Замена путей для list-файлов
-    line = re.sub(r'%LISTS%\\list-([^"]+\.txt)', r'$MODPATH/list/list-\1', line, flags=re.IGNORECASE)
-    line = re.sub(r'%LISTS%list-([^"]+\.txt)', r'$MODPATH/list/list-\1', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\list-([^"]+\.txt)', r'$MODPATH/list/list-\g<1>', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%list-([^"]+\.txt)', r'$MODPATH/list/list-\g<1>', line, flags=re.IGNORECASE)
     
     # Замена путей для ipset-файлов
-    line = re.sub(r'%LISTS%\\ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\1', line, flags=re.IGNORECASE)
-    line = re.sub(r'%LISTS%ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\1', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%\\ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\g<1>', line, flags=re.IGNORECASE)
+    line = re.sub(r'%LISTS%ipset-([^"]+\.txt)', r'$MODPATH/ipset/ipset-\g<1>', line, flags=re.IGNORECASE)
     
     # Удаляем кавычки и нормализуем слеши
     line = line.replace('"', '').replace('\\', '/').replace('//', '/')
@@ -67,10 +70,10 @@ def normalize_rule(rule: str, index: int) -> str:
     """Нормализует отдельное правило, исправляя пустые фильтры"""
     rule = normalize_paths(rule)
     
-    # Исправляем пустые фильтры TCP/UDP
+    # Исправляем пустые фильтры TCP/UDP с использованием \g<1> вместо \1
     rule = re.sub(
         r'(--filter-(?:tcp|udp)=)(?:,|$)', 
-        r'\180,443', 
+        r'\g<1>80,443', 
         rule
     )
     
@@ -89,8 +92,21 @@ def parse_bat_content(content: str) -> list[str]:
     command = extract_winws_command(content)
     print(f"Найдена команда: {command[:100]}...")  # Отладка
     
-    # Делим на правила по --new
-    parts = [p.strip() for p in command.split('--new') if p.strip()]
+    # Делим на правила по --new, но сохраняем --new в результатах
+    parts = []
+    current = []
+    tokens = command.split()
+    
+    for token in tokens:
+        current.append(token)
+        if token == "--new":
+            parts.append(" ".join(current))
+            current = []
+    
+    if current:  # Добавляем последнее правило, даже если нет --new в конце
+        parts.append(" ".join(current))
+    
+    parts = [p.strip().replace("--new", "").strip() for p in parts if p.strip()]
     print(f"Найдено правил: {len(parts)}")  # Отладка
     return parts
 
@@ -173,13 +189,18 @@ def main():
     
     success_count = 0
     for idx, bat_file in enumerate(sorted(bat_files), start=1):
+        # Пропускаем service.bat, так как это не конфигурация winws
+        if bat_file.name.lower() == "service.bat":
+            print(f"Пропуск служебного файла: {bat_file.name}")
+            continue
+            
         out_file = out_dir / f'flowseal-alt{idx}.sh'
         try:
             write_sh_file(bat_file, out_file)
             success_count += 1
         except Exception as e:
             print(f"ОШИБКА при обработке {bat_file}: {str(e)}")
-            # Создаем пустой файл с комментарием об ошибке
+            # Создаем файл с сообщением об ошибке
             with out_file.open('w') as f:
                 f.write('#!/bin/bash\n')
                 f.write(f'# ERROR converting {bat_file.name}: {str(e)}\n')
