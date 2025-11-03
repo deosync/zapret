@@ -13,13 +13,23 @@ def normalize_rule(rule):
     rule = re.sub(r'\s+', ' ', rule)
     rule = re.sub(r'--([a-z\-]+)\s+', r'--\1=', rule)
     rule = rule.replace('"', '')
-    rule = rule.replace('\\', '/')
-    rule = re.sub(r'%BIN%|"[^"]*\\bin\\', '$MODPATH/fake/', rule)
-    rule = re.sub(r'%LISTS%|"[^"]*\\lists\\', '$MODPATH/list/', rule)
-    rule = re.sub(r'%GameFilter%', '', rule)
+
+    # Правильные подстановки для путей
+    rule = rule.replace('%BIN%', '$MODPATH/fake/')
+    rule = rule.replace('%LISTS%', '$MODPATH/list/')
+    
+    # ipset файлы отдельно
+    rule = re.sub(r'\$MODPATH/list/ipset-(\S+\.txt)', r'$MODPATH/ipset/ipset-\1', rule)
+    
+    # Удаляем пустые фильтры
+    rule = re.sub(r'--filter-(tcp|udp)=,', r'--filter-\1=80,443', rule)
+    rule = re.sub(r'--filter-(tcp|udp)=$', r'--filter-\1=1024-65535', rule)
+    
+    # Убираем winws.exe и wf-* параметры
     rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule)
-    rule = re.sub(r'--wf-tcp[=\s]+[0-9,\-]+\s*', '', rule)
-    rule = re.sub(r'--wf-udp[=\s]+[0-9,\-]+\s*', '', rule)
+    rule = re.sub(r'--wf-tcp[=\s]+[0-9,\-]*\s*', '', rule)
+    rule = re.sub(r'--wf-udp[=\s]+[0-9,\-]*\s*', '', rule)
+
     return rule.strip()
 
 def main():
@@ -47,17 +57,11 @@ def main():
                     rule = normalize_rule(p)
                     if not rule:
                         continue
-                    comment = f'# Rule {i}'
                     if i == 1:
-                        f.write(f'{comment}: UDP 443 для основного списка\n')
+                        f.write(f'# Rule {i}: UDP 443 для основного списка\n')
                         f.write(f'config="{rule} --new"\n\n')
                     else:
-                        # Автоматически добавляем к config
-                        # Исправляем пустые фильтры
-                        rule = rule.replace('--filter-tcp=,', '--filter-tcp=80,443')
-                        if '--filter-udp=' in rule and rule.endswith('='):
-                            rule = rule.replace('--filter-udp=', '--filter-udp=1024-65535')
-                        f.write(f'{comment}: правило {i}\n')
+                        f.write(f'# Rule {i}\n')
                         f.write(f'config="$config {rule} --new"\n\n')
             out_file.chmod(0o755)
         except Exception as e:
