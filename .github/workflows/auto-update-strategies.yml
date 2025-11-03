@@ -98,10 +98,10 @@ jobs:
           git commit -m "$COMMIT_MSG"
           git push origin HEAD:main --follow-tags
 
-      - name: Create new release with incremented tag
+      # Этот шаг вычисляет новый тег и сохраняет его в переменную окружения
+      - name: Calculate new release tag
         if: steps.check.outputs.has_updates == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: calculate_tag
         shell: bash
         run: |
           set -e
@@ -127,21 +127,21 @@ jobs:
           NEW_MINOR=$((MINOR + 1))
           NEW_TAG="$MAJOR.$NEW_MINOR"
           echo "New tag: $NEW_TAG"
+          
+          # Сохраняем для следующего шага
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
-          # Создаём release
-          curl -s -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
-            -d "{
-                  \"tag_name\": \"$NEW_TAG\",
-                  \"name\": \"$NEW_TAG\",
-                  \"body\": \"Auto-generated release after strategy update from upstream commit ${{ steps.check.outputs.upstream_commit }}\",
-                  \"draft\": false,
-                  \"prerelease\": false
-                }"
-
-          echo "✅ Release created: $NEW_TAG"
+      # Этот шаг создает релиз с помощью специальной GitHub Action
+      # Это гарантирует генерацию события release, которое триггерит другие workflow
+      - name: Create new release
+        if: steps.check.outputs.has_updates == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.calculate_tag.outputs.new_tag }}
+          name: ${{ steps.calculate_tag.outputs.new_tag }}
+          body: "Auto-generated release after strategy update from upstream commit ${{ steps.check.outputs.upstream_commit }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add summary to job
         if: steps.check.outputs.has_updates == 'true'
@@ -149,6 +149,8 @@ jobs:
           echo "## ✅ Strategies updated" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Upstream commit:** \`${{ steps.check.outputs.upstream_commit }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**New release tag:** \`${{ steps.calculate_tag.outputs.new_tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Files:**" >> $GITHUB_STEP_SUMMARY
           ls -1 module/strategy/flowseal-alt*.sh | sed -e 's|module/strategy/||g' | while read f; do echo "- $f" >> $GITHUB_STEP_SUMMARY; done
