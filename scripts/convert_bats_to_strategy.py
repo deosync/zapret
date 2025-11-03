@@ -10,7 +10,7 @@ def clean_line(line):
     return s.rstrip('^').strip()
 
 def normalize_rule(rule):
-    # Убираем все вызовы winws.exe и echo
+    # Убираем вызовы winws.exe, echo, start
     rule = re.sub(r'^(echo:)?\s*', '', rule)
     rule = re.sub(r'"[^"]*winws\.exe"\s*', '', rule)
     rule = re.sub(r'start\s+"[^"]*"\s*/min\s*', '', rule)
@@ -19,30 +19,43 @@ def normalize_rule(rule):
     rule = rule.replace('%BIN%', '$MODPATH/fake/')
     rule = rule.replace('%LISTS%', '$MODPATH/list/')
 
-    # ipset файлы
+    # Исправляем ipset-файлы
     rule = re.sub(r'\$MODPATH/list/ipset-(\S+\.txt)', r'$MODPATH/ipset/ipset-\1', rule)
 
-    # Преобразуем пустые фильтры
-    rule = re.sub(r'--filter-(tcp|udp)=,', r'--filter-\1=80,443', rule)
-    rule = re.sub(r'--filter-(tcp|udp)=$', lambda m: '--filter-udp=1024-65535' if m.group(1) == 'udp' else '--filter-tcp=80,443', rule)
+    # Преобразуем пустые фильтры TCP/UDP
+    rule = re.sub(r'--filter-tcp=,', '--filter-tcp=80,443', rule)
+    rule = re.sub(r'--filter-tcp=$', '--filter-tcp=80,443', rule)
+    rule = re.sub(r'--filter-udp=,', '--filter-udp=1024-65535', rule)
+    rule = re.sub(r'--filter-udp=$', '--filter-udp=1024-65535', rule)
 
     # Убираем wf-* параметры
     rule = re.sub(r'--wf-tcp[=\s]+[0-9,\-]*\s*', '', rule)
-    rule = re.sub(r'--wf-udp[=\s]+[0-9,\-]*[0-9,\-]*\s*', '', rule)
+    rule = re.sub(r'--wf-udp[=\s]+[0-9,\-]*\s*', '', rule)
 
-    # Убираем GameFilter, если он остался
+    # Убираем GameFilter
     rule = rule.replace('%GameFilter%', '')
 
     # Убираем лишние пробелы
     rule = re.sub(r'\s+', ' ', rule)
     return rule.strip()
 
-def generate_rule_comment(rule, idx):
-    # Простейшая генерация читаемого комментария
-    if '--filter-udp=' in rule:
-        return f'# Rule {idx}: UDP {re.search(r"--filter-udp=([0-9,\-]+)", rule).group(1) if re.search(r"--filter-udp=([0-9,\-]+)", rule) else ""}'
-    if '--filter-tcp=' in rule:
-        return f'# Rule {idx}: TCP {re.search(r"--filter-tcp=([0-9,\-]+)", rule).group(1) if re.search(r"--filter-tcp=([0-9,\-]+)", rule) else ""}'
+def generate_rule_comment(idx, rule):
+    if idx == 1:
+        return f'# Rule {idx}: UDP 443 для основного списка'
+    if idx == 2:
+        return f'# Rule {idx}: UDP 19294-19344,50000-50100 для Discord/STUN'
+    if idx == 3:
+        return f'# Rule {idx}: TCP 2053,2083,2087,2096,8443 для Discord media'
+    if idx == 4:
+        return f'# Rule {idx}: TCP 443 для Google списка'
+    if idx == 5:
+        return f'# Rule {idx}: TCP 80,443 для основного списка'
+    if idx == 6:
+        return f'# Rule {idx}: UDP 443 для ipset-all'
+    if idx == 7:
+        return f'# Rule {idx}: TCP 80,443 для ipset-all'
+    if idx == 8:
+        return f'# Rule {idx}: UDP для ipset-all (catch-all, без GameFilter)'
     return f'# Rule {idx}'
 
 def main():
@@ -70,9 +83,9 @@ def main():
                     rule = normalize_rule(p)
                     if not rule:
                         continue
-                    comment = generate_rule_comment(rule, i)
+                    comment = generate_rule_comment(i, rule)
                     if i == 1:
-                        f.write(f'{comment} для основного списка\n')
+                        f.write(f'{comment}\n')
                         f.write(f'config="{rule} --new"\n\n')
                     else:
                         f.write(f'{comment}\n')
