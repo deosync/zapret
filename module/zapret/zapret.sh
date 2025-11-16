@@ -3,8 +3,9 @@ MODPATH=/data/adb/modules/zapret
 CURRENTSTRATEGY=$(cat $MODPATH/config/current-strategy)
 . "$MODPATH/strategy/$CURRENTSTRATEGY.sh"
 
-tcp_ports="$(echo $config | grep -oE 'filter-tcp=[0-9,-]+' | sed -e 's/.*=//g' -e 's/,/\n/g' -e 's/ /,/g' | sort -un)";
-udp_ports="$(echo $config | grep -oE 'filter-udp=[0-9,-]+' | sed -e 's/.*=//g' -e 's/,/\n/g' -e 's/ /,/g' | sort -un)";
+# ИСПРАВЛЕНО: правильное извлечение портов с сохранением диапазонов
+tcp_ports="$(echo $config | grep -oE '\-\-filter-tcp=[0-9,\-]+' | sed -e 's/.*=//g' | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')";
+udp_ports="$(echo $config | grep -oE '\-\-filter-udp=[0-9,\-]+' | sed -e 's/.*=//g' | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')";
 
 iptAdd() {
     iptDPort="$iMportD $2"; iptSPort="$iMportS $2";
@@ -19,15 +20,16 @@ ip6tAdd() {
 }
 
 addMultiPort() {
-    for current_port in $2; do
+    for current_port in $(echo "$2" | tr ',' ' '); do
         if [[ $current_port == *-* ]]; then
-            for i in $(seq ${current_port%-*} ${current_port#*-}); do
-                iptAdd "$1" "$i";
-		ip6tAdd "$1" "$i";
-            done
+            # Диапазон портов - используем iptables напрямую с :
+            start_port="${current_port%-*}"
+            end_port="${current_port#*-}"
+            iptables -t mangle -I POSTROUTING -p $1 --dport $start_port:$end_port $iCBo $iMark -j NFQUEUE --queue-num 200 --queue-bypass
+            iptables -t mangle -I PREROUTING -p $1 --sport $start_port:$end_port $iCBr $iMark -j NFQUEUE --queue-num 200 --queue-bypass
         else
             iptAdd "$1" "$current_port";
-	    ip6tAdd "$1" "$current_port";
+            ip6tAdd "$1" "$current_port";
         fi
     done
 }
@@ -91,7 +93,7 @@ addMultiPort "udp" "$udp_ports";
 while true; do
     if ! pgrep -x "nfqws" > /dev/null; then
             . "$MODPATH/zapret/make-unkillable.sh" &
-	    "$MODPATH/zapret/nfqws" --uid=0:0 --bind-fix4 --bind-fix6 --qnum=200 $config
+            "$MODPATH/zapret/nfqws" --uid=0:0 --bind-fix4 --bind-fix6 --qnum=200 $config
     fi
     sleep 5
 done
