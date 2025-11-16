@@ -9,7 +9,7 @@ config="--filter-udp=443 --hostlist=$MODPATH/list/list-general.txt --hostlist-ex
 config="$config --filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-repeats=6 --new"
 
 # Rule 3: TCP 2053,2083,2087,2096,8443 для Discord media
-config="$config --filter-l3=ipv4 --filter-tcp=443,2053,2083,2087,2096,8443 --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=syndata,multidisorder --new"
+config="$config --filter-l3=ipv4 --filter-tcp=443,2053,2083,2087,2096,8443,1024-65535 --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=syndata,multidisorder --new"
 
 # Rule 4: TCP 443 для Google списка
 config="$config --filter-udp=443 --ipset=$MODPATH/ipset/ipset-all.txt --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic=$MODPATH/fake/quic_initial_www_google_com.bin --new"
