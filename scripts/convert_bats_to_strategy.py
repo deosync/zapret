@@ -4,6 +4,14 @@ import re
 import sys
 from pathlib import Path
 
+# Добавляем дебаг режим
+DEBUG = True
+
+def debug_print(message: str):
+    """Выводит отладочную информацию"""
+    if DEBUG:
+        print(f"[DEBUG] {message}")
+
 def is_config_file(filename: str) -> bool:
     """Проверяет, является ли файл конфигурационным (начинается с 'general')"""
     return filename.lower().startswith('general')
@@ -23,6 +31,8 @@ def extract_winws_command(content: str) -> str:
         raise ValueError("Не удалось найти команду winws.exe в файле")
     
     command = match.group(1)
+    debug_print(f"Извлечённая команда (сырая): {command[:200]}...")
+    
     # Удаляем символы продолжения строки (^) и объединяем в одну строку
     command = re.sub(r'\^\s*\n\s*', ' ', command)
     command = re.sub(r'\s+', ' ', command).strip()
@@ -30,6 +40,7 @@ def extract_winws_command(content: str) -> str:
     # Удаляем служебные команды из начала
     command = re.sub(r'^.*?echo:\s*', '', command, flags=re.IGNORECASE)
     
+    debug_print(f"Команда после очистки: {command[:200]}...")
     return command
 
 def cleanup_command(command: str) -> str:
@@ -37,6 +48,7 @@ def cleanup_command(command: str) -> str:
     # Удаляем параметры wf-tcp и wf-udp, которые не используются в bash
     command = re.sub(r'--wf-tcp=[^ ]* ', '', command)
     command = re.sub(r'--wf-udp=[^ ]* ', '', command)
+    debug_print(f"Команда после удаления wf-параметров: {command[:200]}...")
     return command.strip()
 
 def normalize_paths(line: str) -> str:
@@ -53,7 +65,13 @@ def normalize_paths(line: str) -> str:
     # Удаляем кавычки и нормализуем слеши
     line = line.replace('"', '').replace('\\', '/').replace('//', '/')
     
-    # Удаляем %GameFilter% и исправляем запятые
+    # ИСПРАВЛЕНИЕ: Обрабатываем %GameFilter% правильно - заменяем на 1024-65535
+    # Для --filter-tcp
+    line = re.sub(r'--filter-tcp=([0-9,]+),%GameFilter%', r'--filter-tcp=\g<1>,1024-65535', line, flags=re.IGNORECASE)
+    # Для --filter-udp (только %GameFilter% без других портов)
+    line = re.sub(r'--filter-udp=%GameFilter%', r'--filter-udp=1024-65535', line, flags=re.IGNORECASE)
+    
+    # Удаляем оставшиеся %GameFilter% и исправляем запятые
     line = line.replace('%GameFilter%', '')
     line = re.sub(r',,+', ',', line)
     line = re.sub(r'(=),', r'\g<1>', line)
@@ -64,6 +82,7 @@ def normalize_paths(line: str) -> str:
 
 def normalize_rule(rule: str, index: int, total_rules: int) -> str:
     """Нормализует отдельное правило, исправляя пустые фильтры"""
+    debug_print(f"Обработка правила {index}: {rule[:100]}...")
     rule = normalize_paths(rule)
     
     # Исправляем пустые фильтры TCP/UDP
@@ -80,19 +99,14 @@ def normalize_rule(rule: str, index: int, total_rules: int) -> str:
             '--filter-udp=443',
             rule
         )
-    
-    # Для последнего правила (UDP catch-all)
-    if index == total_rules and "ipset-all.txt" in rule and "--filter-udp=" in rule:
-        rule = re.sub(
-            r'--filter-udp=[^ ]*', 
-            '--filter-udp=1024-65535',
-            rule
-        )
+        debug_print(f"Правило 6 исправлено на UDP 443")
     
     # Убираем --new из конца правил
     rule = rule.replace('--new', '').strip()
     
-    return re.sub(r'\s+', ' ', rule).strip()
+    result = re.sub(r'\s+', ' ', rule).strip()
+    debug_print(f"Правило {index} после нормализации: {result[:100]}...")
+    return result
 
 def parse_bat_content(content: str) -> list[str]:
     """Парсит содержимое bat-файла и возвращает список правил"""
@@ -101,6 +115,7 @@ def parse_bat_content(content: str) -> list[str]:
     
     # Делим на правила по --new
     parts = [p.strip() for p in command.split('--new') if p.strip()]
+    debug_print(f"Найдено правил: {len(parts)}")
     return parts
 
 def write_sh_file(bat_file: Path, out_file: Path):
@@ -116,8 +131,8 @@ def write_sh_file(bat_file: Path, out_file: Path):
         "TCP 443 для Google списка",
         "TCP 80,443 для основного списка",
         "UDP 443 для ipset-all",
-        "TCP 80,443 для ipset-all",
-        "UDP для ipset-all (catch-all, без GameFilter)",
+        "TCP 80,443,1024-65535 для ipset-all",  # Rule 7 теперь с GameFilter
+        "UDP 1024-65535 для ipset-all (catch-all)",  # Rule 8 теперь с GameFilter
     ]
     
     with out_file.open('w', encoding='utf-8') as f:
@@ -128,6 +143,7 @@ def write_sh_file(bat_file: Path, out_file: Path):
         for i, rule in enumerate(rules, 1):
             normalized = normalize_rule(rule, i, total_rules)
             if not normalized:
+                debug_print(f"Предупреждение: правило {i} пустое после нормализации")
                 continue
                 
             comment = comments[i-1] if i <= len(comments) else f"Правило {i}"
@@ -146,6 +162,7 @@ def write_sh_file(bat_file: Path, out_file: Path):
                 f.write(f'config="$config {normalized}"\n')
 
     out_file.chmod(0o755)
+    debug_print(f"Файл {out_file} успешно создан")
 
 def main():
     src_dir = Path('upstream_bats')
@@ -164,13 +181,21 @@ def main():
     for idx, bat_file in enumerate(sorted(config_files), start=1):
         out_file = out_dir / f'flowseal-alt{idx}.sh'
         try:
+            print(f"\n{'='*60}")
+            print(f"Обработка файла: {bat_file.name}")
+            print(f"{'='*60}")
             write_sh_file(bat_file, out_file)
             success_count += 1
-            print(f"Успешно обработан: {bat_file.name} -> {out_file.name}")
+            print(f"✓ Успешно: {bat_file.name} -> {out_file.name}")
         except Exception as e:
-            print(f"ОШИБКА при обработке {bat_file}: {str(e)}")
+            print(f"✗ ОШИБКА при обработке {bat_file}: {str(e)}")
+            if DEBUG:
+                import traceback
+                traceback.print_exc()
     
-    print(f"\nРезультат: успешно обработано {success_count} из {len(config_files)} файлов")
+    print(f"\n{'='*60}")
+    print(f"Результат: успешно обработано {success_count} из {len(config_files)} файлов")
+    print(f"{'='*60}")
     if success_count == 0:
         sys.exit(1)
 
