@@ -15,13 +15,13 @@ config="$config --filter-tcp=2053,2083,2087,2096,8443 --hostlist-domains=discord
 config="$config --filter-tcp=443 --hostlist=$MODPATH/list/list-google.txt --ip-id=zero --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=$MODPATH/fake/tls_clienthello_www_google_com.bin --new"
 
 # Rule 5: TCP 80,443 для основного списка
-config="$config --filter-tcp=80,443 --hostlist=$MODPATH/list/list-general.txt --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=$MODPATH/fake/tls_clienthello_4pda_to.bin --dpi-desync-fake-tls-mod=none --dpi-desync-fake-http=$MODPATH/fake/tls_clienthello_max_ru.bin --new"
+config="$config --filter-tcp=80,443 --hostlist=$MODPATH/list/list-general.txt --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=$MODPATH/fake/stun.bin --dpi-desync-fake-tls=$MODPATH/fake/tls_clienthello_4pda_to.bin --dpi-desync-fake-http=$MODPATH/fake/tls_clienthello_max_ru.bin --new"
 
 # Rule 6: UDP 443 для ipset-all
 config="$config --filter-udp=443 --ipset=$MODPATH/ipset/ipset-all.txt --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic=$MODPATH/fake/quic_initial_www_google_com.bin --new"
 
 # Rule 7: TCP 80,443,1024-65535 для ipset-all
-config="$config --filter-tcp=80,443,1024-65535 --ipset=$MODPATH/ipset/ipset-all.txt --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=^! --dpi-desync-fake-tls-mod=rnd,sni=www.google.com --dpi-desync-fake-tls=$MODPATH/fake/tls_clienthello_4pda_to.bin --dpi-desync-fake-tls-mod=none --dpi-desync-fake-http=$MODPATH/fake/tls_clienthello_max_ru.bin --new"
+config="$config --filter-tcp=80,443,1024-65535 --ipset=$MODPATH/ipset/ipset-all.txt --hostlist-exclude=$MODPATH/list/list-exclude.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fooling=ts --dpi-desync-fake-tls=$MODPATH/fake/stun.bin --dpi-desync-fake-tls=$MODPATH/fake/tls_clienthello_4pda_to.bin --dpi-desync-fake-http=$MODPATH/fake/tls_clienthello_max_ru.bin --new"
 
 # Rule 8: UDP 1024-65535 для ipset-all (catch-all)
 config="$config --filter-udp=1024-65535 --ipset=$MODPATH/ipset/ipset-all.txt --ipset-exclude=$MODPATH/ipset/ipset-exclude.txt --dpi-desync=fake --dpi-desync-repeats=12 --dpi-desync-any-protocol=1 --dpi-desync-fake-unknown-udp=$MODPATH/fake/quic_initial_www_google_com.bin --dpi-desync-cutoff=n2"
